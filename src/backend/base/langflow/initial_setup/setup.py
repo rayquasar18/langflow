@@ -58,6 +58,36 @@ from langflow.services.deps import (
 # can use them as a starting point for their own projects.
 
 
+async def get_or_create_default_tenant_folder(
+    session,
+    user_id,
+    tenant_id,
+):
+    """Get or create a default 'My Projects' folder for a given user+tenant pair.
+
+    This ensures every user in every tenant gets a personal default folder on first access.
+    """
+    stmt = select(Folder).where(
+        Folder.name == DEFAULT_FOLDER_NAME,
+        Folder.user_id == user_id,
+        Folder.tenant_id == tenant_id,
+    )
+    existing = (await session.exec(stmt)).first()
+    if existing:
+        return existing
+
+    folder = Folder(
+        name=DEFAULT_FOLDER_NAME,
+        description=DEFAULT_FOLDER_DESCRIPTION,
+        user_id=user_id,
+        tenant_id=tenant_id,
+    )
+    session.add(folder)
+    await session.flush()
+    await session.refresh(folder)
+    return folder
+
+
 def update_projects_components_with_latest_component_versions(project_data, all_types_dict):
     # Flatten the all_types_dict for easy access
     all_types_dict_flat = {}

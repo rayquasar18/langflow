@@ -97,16 +97,39 @@ def _auth_error_to_http(e: AuthenticationError) -> HTTPException:
     return HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=e.message)
 
 
+def _populate_request_state(request: Request) -> None:
+    """Populate request.state with JWT claims from the _current_claims context var.
+
+    Called after auth service validates a JWT (sets _current_claims).
+    This makes tenant_id, user_id, role, tier, and is_platform_admin
+    available to all route handlers and downstream middleware via request.state.
+    """
+    from langflow.services.auth.quasar_service import _current_claims
+
+    claims = _current_claims.get()
+    if claims:
+        request.state.tenant_id = claims.get("tenant_id")
+        request.state.user_id = claims.get("sub")
+        request.state.role = claims.get("role")
+        request.state.tier = claims.get("tier")
+        request.state.is_platform_admin = claims.get("is_platform_admin", False)
+
+
 async def get_current_user(
+    request: Request,
     token: Annotated[str | None, Security(oauth2_login)],
     query_param: Annotated[str | None, Security(api_key_query)],
     header_param: Annotated[str | None, Security(api_key_header)],
     db: AsyncSession = Depends(injectable_session_scope),
 ) -> User:
     try:
-        return await _auth_service().get_current_user(token, query_param, header_param, db)
+        user = await _auth_service().get_current_user(token, query_param, header_param, db)
     except AuthenticationError as e:
         raise _auth_error_to_http(e) from e
+    else:
+        # Populate request.state from JWT claims context var
+        _populate_request_state(request)
+        return user
 
 
 async def get_current_user_from_access_token(
@@ -162,12 +185,15 @@ async def get_current_user_for_sse(
     api_key = request.query_params.get("x-api-key") or request.headers.get("x-api-key")
 
     try:
-        return await _auth_service().get_current_user_for_sse(token, api_key, db)
+        user = await _auth_service().get_current_user_for_sse(token, api_key, db)
     except AuthenticationError as e:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Missing or invalid credentials (cookie or API key).",
         ) from e
+    else:
+        _populate_request_state(request)
+        return user
 
 
 async def get_optional_user(

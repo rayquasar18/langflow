@@ -7,7 +7,18 @@ from urllib.parse import quote
 from uuid import UUID
 
 import orjson
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, Response, UploadFile, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+    UploadFile,
+    status,
+)
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import StreamingResponse
 from fastapi_pagination import Params
@@ -32,6 +43,7 @@ from langflow.api.v2.mcp import update_server
 from langflow.helpers.flow import generate_unique_flow_name
 from langflow.helpers.folders import generate_unique_folder_name
 from langflow.initial_setup.constants import ASSISTANT_FOLDER_NAME, STARTER_FOLDER_NAME
+from langflow.middleware.tenant import tenant_scoped_query_with_system
 from langflow.services.auth.mcp_encryption import encrypt_auth_settings
 from langflow.services.database.models.api_key.crud import create_api_key
 from langflow.services.database.models.api_key.model import ApiKeyCreate
@@ -57,10 +69,15 @@ async def create_project(
     session: DbSession,
     project: FolderCreate,
     current_user: CurrentActiveUser,
+    request: Request,
 ):
     try:
         new_project = Folder.model_validate(project, from_attributes=True)
         new_project.user_id = current_user.id
+        # Inject tenant_id from request.state (populated by JWT middleware)
+        tenant_id = getattr(request.state, "tenant_id", None)
+        if tenant_id:
+            new_project.tenant_id = tenant_id
         # First check if the project.name is unique
         # there might be flows with name like: "MyFlow", "MyFlow (1)", "MyFlow (2)"
         # so we need to check if the name is unique with `like` operator
@@ -218,15 +235,17 @@ async def read_projects(
     *,
     session: DbSession,
     current_user: CurrentActiveUser,
+    request: Request,
 ):
     try:
-        projects = (
-            await session.exec(
-                select(Folder).where(
-                    or_(Folder.user_id == current_user.id, Folder.user_id == None)  # noqa: E711
-                )
-            )
-        ).all()
+        stmt = select(Folder).where(
+            or_(Folder.user_id == current_user.id, Folder.user_id == None)  # noqa: E711
+        )
+        # Scope by tenant if tenant context is available
+        tenant_id = getattr(request.state, "tenant_id", None)
+        if tenant_id:
+            stmt = tenant_scoped_query_with_system(stmt, Folder, request)
+        projects = (await session.exec(stmt)).all()
         projects = [project for project in projects if project.name != STARTER_FOLDER_NAME]
         sorted_projects = sorted(projects, key=lambda x: x.name != DEFAULT_FOLDER_NAME)
 

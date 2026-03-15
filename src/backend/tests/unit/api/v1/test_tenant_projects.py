@@ -17,6 +17,7 @@ from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
+from langflow.services.database.models.folder.constants import DEFAULT_FOLDER_NAME
 from langflow.services.database.models.folder.model import Folder
 from sqlmodel import select
 
@@ -198,7 +199,7 @@ class TestClaimsPropagation:
 class TestDefaultTenantFolder:
     @pytest.mark.asyncio
     async def test_get_or_create_default_tenant_folder(self):
-        """Should create 'My Projects' folder for user+tenant on first access."""
+        """Should create default folder for user+tenant on first access."""
         from langflow.initial_setup.setup import get_or_create_default_tenant_folder
 
         # Create mock session
@@ -212,7 +213,7 @@ class TestDefaultTenantFolder:
         # Should have called session.add with a new folder
         mock_session.add.assert_called_once()
         added_folder = mock_session.add.call_args[0][0]
-        assert added_folder.name == "My Projects"
+        assert added_folder.name == DEFAULT_FOLDER_NAME
         assert added_folder.user_id == USER_A
         assert added_folder.tenant_id == TENANT_A
 
@@ -222,7 +223,7 @@ class TestDefaultTenantFolder:
         from langflow.initial_setup.setup import get_or_create_default_tenant_folder
 
         existing_folder = Folder(
-            name="My Projects",
+            name=DEFAULT_FOLDER_NAME,
             user_id=USER_A,
             tenant_id=TENANT_A,
         )
@@ -236,7 +237,7 @@ class TestDefaultTenantFolder:
 
         # Should NOT call session.add since folder already exists
         mock_session.add.assert_not_called()
-        assert folder.name == "My Projects"
+        assert folder.name == DEFAULT_FOLDER_NAME
 
 
 # ---------------------------------------------------------------------------
