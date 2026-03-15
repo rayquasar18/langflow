@@ -128,7 +128,7 @@ def quasar_service():
     from langflow.services.auth.quasar_service import QuasarAuthService
 
     mock_settings = MagicMock()
-    mock_settings.auth_settings.SECRET_KEY.get_secret_value.return_value = "a" * 32
+    mock_settings.auth_settings.SECRET_KEY.get_secret_value.return_value = "test-secret"
     mock_settings.auth_settings.AUTO_LOGIN = False
     mock_settings.auth_settings.WEBHOOK_AUTH_ENABLE = False
 
@@ -161,13 +161,13 @@ class TestValidateToken:
 
     @pytest.mark.anyio
     async def test_expired_jwt_raises_invalid_token(self, quasar_service):
-        """Expired JWT raises InvalidTokenError."""
-        from langflow.services.auth.exceptions import InvalidTokenError
+        """Expired JWT raises TokenExpiredError (subclass of AuthenticationError)."""
+        from langflow.services.auth.exceptions import TokenExpiredError
 
         claims = _make_claims(exp_delta=timedelta(seconds=-60))
         token = _encode_jwt(claims)
 
-        with pytest.raises(InvalidTokenError):
+        with pytest.raises(TokenExpiredError):
             await quasar_service._validate_token(token)
 
     @pytest.mark.anyio
@@ -302,20 +302,26 @@ class TestGetCurrentUser:
     @pytest.mark.anyio
     async def test_fallback_to_api_key_when_no_jwt(self, quasar_service):
         """Falls back to API key auth when no JWT present."""
-        from langflow.services.database.models.user.model import UserRead
+        from langflow.services.database.models.user.model import User, UserRead
 
-        mock_user_read = MagicMock(spec=UserRead)
-        mock_user_read.is_active = True
+        user_id = uuid4()
+        mock_user = User(
+            id=user_id,
+            username="api-user@example.com",
+            password="!quasar-shadow-no-login",  # noqa: S106
+            is_active=True,
+            is_superuser=False,
+        )
 
-        with patch.object(
-            quasar_service,
-            "api_key_security",
+        with patch(
+            "langflow.services.auth.quasar_service.check_key",
             new_callable=AsyncMock,
-            return_value=mock_user_read,
+            return_value=mock_user,
         ):
             result = await quasar_service.get_current_user(None, "test-key", None, _FakeDB())
 
-        assert result == mock_user_read
+        assert isinstance(result, UserRead)
+        assert result.id == user_id
 
 
 # ---------------------------------------------------------------------------
@@ -334,7 +340,7 @@ class TestAuthServiceFactory:
         factory = AuthServiceFactory()
 
         mock_settings = MagicMock()
-        mock_settings.auth_settings.SECRET_KEY.get_secret_value.return_value = "a" * 32
+        mock_settings.auth_settings.SECRET_KEY.get_secret_value.return_value = "test-secret"
 
         with patch(
             "langflow.services.auth.quasar_service.PyJWKClient",
