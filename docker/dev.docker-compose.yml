@@ -18,6 +18,7 @@ services:
       - LANGFLOW_SUPERUSER=langflow
       - LANGFLOW_SUPERUSER_PASSWORD=langflow
       - LANGFLOW_CONFIG_DIR=/var/lib/langflow
+      - JWKS_URL=http://auth:8000/.well-known/jwks.json
     env_file:
       - ../.env
     volumes:
