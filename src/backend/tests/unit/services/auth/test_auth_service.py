@@ -1,22 +1,27 @@
+"""Tests for the Langflow auth service.
+
+Tests for removed functionality (local login, token creation, password
+management) are marked skip because QuasarAuthService delegates these
+to the Auth Service. See test_quasar_auth.py for JWKS/JWT tests.
+"""
+
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 from uuid import UUID, uuid4
 
-import jwt
 import pytest
 from fastapi import HTTPException, status
 from langflow.services.auth.exceptions import (
-    InactiveUserError,
     InvalidTokenError,
-    TokenExpiredError,
 )
 from langflow.services.auth.service import AuthService
 from langflow.services.database.models.user.model import User
 from lfx.services.settings.auth import AuthSettings
 from pydantic import SecretStr
+
+SKIP_REASON = "Removed: Langflow no longer issues tokens/manages passwords (Auth Service handles this)"
 
 
 @pytest.fixture
@@ -36,7 +41,8 @@ def auth_service(auth_settings, tmp_path) -> AuthService:
         auth_settings=auth_settings,
         settings=SimpleNamespace(config_dir=str(tmp_path)),
     )
-    return AuthService(settings_service)
+    with patch("langflow.services.auth.quasar_service.PyJWKClient"):
+        return AuthService(settings_service)
 
 
 def _dummy_user(user_id: UUID, *, active: bool = True) -> User:
@@ -49,34 +55,24 @@ def _dummy_user(user_id: UUID, *, active: bool = True) -> User:
     )
 
 
+# =============================================================================
+# Removed functionality -- skipped tests
+# =============================================================================
+
+
+@pytest.mark.skip(reason=SKIP_REASON)
 @pytest.mark.anyio
 async def test_get_current_user_from_access_token_returns_active_user(auth_service: AuthService):
-    user_id = uuid4()
-    db = AsyncMock()
-    token = auth_service.create_token({"sub": str(user_id), "type": "access"}, timedelta(minutes=5))
-    fake_user = _dummy_user(user_id)
-
-    with patch("langflow.services.auth.service.get_user_by_id", new=AsyncMock(return_value=fake_user)) as mock_get_user:
-        result = await auth_service.get_current_user_from_access_token(token, db)
-
-    assert result is fake_user
-    mock_get_user.assert_awaited_once_with(db, str(user_id))
+    pass
 
 
+@pytest.mark.skip(reason=SKIP_REASON)
 @pytest.mark.anyio
 async def test_get_current_user_from_access_token_rejects_expired(
     auth_service: AuthService,
     auth_settings: AuthSettings,
 ):
-    expired = datetime.now(timezone.utc) - timedelta(minutes=1)
-    token = jwt.encode(
-        {"sub": str(uuid4()), "type": "access", "exp": int(expired.timestamp())},
-        auth_settings.SECRET_KEY.get_secret_value(),
-        algorithm=auth_settings.ALGORITHM,
-    )
-
-    with pytest.raises(TokenExpiredError):
-        await auth_service.get_current_user_from_access_token(token, AsyncMock())
+    pass
 
 
 @pytest.mark.anyio
@@ -92,28 +88,16 @@ async def test_get_current_user_from_access_token_rejects_malformed_token(auth_s
             await auth_service.get_current_user_from_access_token(token, db)
 
 
+@pytest.mark.skip(reason=SKIP_REASON)
 @pytest.mark.anyio
 async def test_get_current_user_from_access_token_requires_active_user(auth_service: AuthService):
-    user_id = uuid4()
-    db = AsyncMock()
-    token = auth_service.create_token({"sub": str(user_id), "type": "access"}, timedelta(minutes=5))
-    inactive_user = _dummy_user(user_id, active=False)
-
-    with (
-        patch("langflow.services.auth.service.get_user_by_id", new=AsyncMock(return_value=inactive_user)),
-        pytest.raises(InactiveUserError),
-    ):
-        await auth_service.get_current_user_from_access_token(token, db)
+    pass
 
 
+@pytest.mark.skip(reason=SKIP_REASON)
 @pytest.mark.anyio
 async def test_create_refresh_token_requires_refresh_type(auth_service: AuthService):
-    invalid_refresh = auth_service.create_token({"sub": str(uuid4()), "type": "access"}, timedelta(minutes=1))
-
-    with pytest.raises(HTTPException) as exc:
-        await auth_service.create_refresh_token(invalid_refresh, AsyncMock())
-
-    assert exc.value.status_code == status.HTTP_401_UNAUTHORIZED
+    pass
 
 
 def test_encrypt_and_decrypt_api_key_roundtrip(auth_service: AuthService):
@@ -126,42 +110,24 @@ def test_encrypt_and_decrypt_api_key_roundtrip(auth_service: AuthService):
     assert decrypted == api_key
 
 
+@pytest.mark.skip(reason=SKIP_REASON)
 def test_password_helpers_roundtrip(auth_service: AuthService):
-    password = "Str0ngP@ssword"  # noqa: S105  # pragma: allowlist secret
-
-    hashed = auth_service.get_password_hash(password)
-    assert hashed != password
-    assert auth_service.verify_password(password, hashed)
+    pass
 
 
 # =============================================================================
-# Token Creation Tests
+# Token Creation Tests -- all skipped (Langflow no longer issues tokens)
 # =============================================================================
 
 
+@pytest.mark.skip(reason=SKIP_REASON)
 def test_create_token_contains_expected_claims(auth_service: AuthService):
-    """Test that created tokens contain the expected claims."""
-    user_id = uuid4()
-    token = auth_service.create_token(
-        {"sub": str(user_id), "type": "access", "custom": "value"},
-        timedelta(minutes=5),
-    )
-
-    # Decode without verification to check claims
-    claims = jwt.decode(token, options={"verify_signature": False})
-    assert claims["sub"] == str(user_id)
-    assert claims["type"] == "access"
-    assert claims["custom"] == "value"
-    assert "exp" in claims
+    pass
 
 
+@pytest.mark.skip(reason=SKIP_REASON)
 def test_get_user_id_from_token_valid(auth_service: AuthService):
-    """Test extracting user ID from a valid token."""
-    user_id = uuid4()
-    token = auth_service.create_token({"sub": str(user_id), "type": "access"}, timedelta(minutes=5))
-
-    result = auth_service.get_user_id_from_token(token)
-    assert result == user_id
+    pass
 
 
 def test_get_user_id_from_token_invalid_returns_zero_uuid(auth_service: AuthService):
@@ -170,103 +136,43 @@ def test_get_user_id_from_token_invalid_returns_zero_uuid(auth_service: AuthServ
     assert result == UUID(int=0)
 
 
+@pytest.mark.skip(reason=SKIP_REASON)
 def test_create_user_api_key(auth_service: AuthService):
-    """Test API key creation for a user."""
-    user_id = uuid4()
-    result = auth_service.create_user_api_key(user_id)
-
-    assert "api_key" in result
-    # Verify the token contains expected claims
-    claims = jwt.decode(result["api_key"], options={"verify_signature": False})
-    assert claims["sub"] == str(user_id)
-    assert claims["type"] == "api_key"
+    pass
 
 
+@pytest.mark.skip(reason=SKIP_REASON)
 @pytest.mark.anyio
 async def test_create_user_tokens(auth_service: AuthService):
-    """Test creating access and refresh tokens."""
-    user_id = uuid4()
-    db = AsyncMock()
-
-    result = await auth_service.create_user_tokens(user_id, db, update_last_login=False)
-
-    assert "access_token" in result
-    assert "refresh_token" in result
-    assert result["token_type"] == "bearer"  # noqa: S105 - not a password
-
-    # Verify access token claims
-    access_claims = jwt.decode(result["access_token"], options={"verify_signature": False})
-    assert access_claims["sub"] == str(user_id)
-    assert access_claims["type"] == "access"
-
-    # Verify refresh token claims
-    refresh_claims = jwt.decode(result["refresh_token"], options={"verify_signature": False})
-    assert refresh_claims["sub"] == str(user_id)
-    assert refresh_claims["type"] == "refresh"
+    pass
 
 
+@pytest.mark.skip(reason=SKIP_REASON)
 @pytest.mark.anyio
 async def test_create_user_tokens_updates_last_login(auth_service: AuthService):
-    """Test that create_user_tokens updates last login when requested."""
-    user_id = uuid4()
-    db = AsyncMock()
-
-    with patch("langflow.services.auth.service.update_user_last_login_at", new=AsyncMock()) as mock_update:
-        await auth_service.create_user_tokens(user_id, db, update_last_login=True)
-        mock_update.assert_awaited_once_with(user_id, db)
+    pass
 
 
+@pytest.mark.skip(reason=SKIP_REASON)
 @pytest.mark.anyio
 async def test_create_refresh_token_valid(auth_service: AuthService):
-    """Test creating new tokens from a valid refresh token."""
-    user_id = uuid4()
-    db = AsyncMock()
-    refresh_token = auth_service.create_token({"sub": str(user_id), "type": "refresh"}, timedelta(minutes=5))
-    fake_user = _dummy_user(user_id)
-
-    with patch("langflow.services.auth.service.get_user_by_id", new=AsyncMock(return_value=fake_user)):
-        result = await auth_service.create_refresh_token(refresh_token, db)
-
-    assert "access_token" in result
-    assert "refresh_token" in result
+    pass
 
 
+@pytest.mark.skip(reason=SKIP_REASON)
 @pytest.mark.anyio
 async def test_create_refresh_token_user_not_found(auth_service: AuthService):
-    """Test refresh token fails when user doesn't exist."""
-    user_id = uuid4()
-    db = AsyncMock()
-    refresh_token = auth_service.create_token({"sub": str(user_id), "type": "refresh"}, timedelta(minutes=5))
-
-    with (
-        patch("langflow.services.auth.service.get_user_by_id", new=AsyncMock(return_value=None)),
-        pytest.raises(HTTPException) as exc,
-    ):
-        await auth_service.create_refresh_token(refresh_token, db)
-
-    assert exc.value.status_code == status.HTTP_401_UNAUTHORIZED
+    pass
 
 
+@pytest.mark.skip(reason=SKIP_REASON)
 @pytest.mark.anyio
 async def test_create_refresh_token_inactive_user(auth_service: AuthService):
-    """Test refresh token fails for inactive user."""
-    user_id = uuid4()
-    db = AsyncMock()
-    refresh_token = auth_service.create_token({"sub": str(user_id), "type": "refresh"}, timedelta(minutes=5))
-    inactive_user = _dummy_user(user_id, active=False)
-
-    with (
-        patch("langflow.services.auth.service.get_user_by_id", new=AsyncMock(return_value=inactive_user)),
-        pytest.raises(HTTPException) as exc,
-    ):
-        await auth_service.create_refresh_token(refresh_token, db)
-
-    assert exc.value.status_code == status.HTTP_401_UNAUTHORIZED
-    assert "inactive" in exc.value.detail.lower()
+    pass
 
 
 # =============================================================================
-# User Validation Tests
+# User Validation Tests (still relevant -- QuasarAuthService implements these)
 # =============================================================================
 
 
@@ -326,110 +232,42 @@ async def test_get_current_active_superuser_not_superuser(auth_service: AuthServ
 
 
 # =============================================================================
-# Authenticate User Tests
+# Authenticate User Tests -- all skipped
 # =============================================================================
 
 
+@pytest.mark.skip(reason=SKIP_REASON)
 @pytest.mark.anyio
 async def test_authenticate_user_success(auth_service: AuthService):
-    """Test successful authentication."""
-    user_id = uuid4()
-    password = "correct_password"  # noqa: S105  # pragma: allowlist secret
-    hashed = auth_service.get_password_hash(password)
-    user = User(
-        id=user_id,
-        username="testuser",
-        password=hashed,  # pragma: allowlist secret
-        is_active=True,
-        is_superuser=False,
-    )
-    db = AsyncMock()
-
-    with patch("langflow.services.auth.service.get_user_by_username", new=AsyncMock(return_value=user)):
-        result = await auth_service.authenticate_user("testuser", password, db)
-
-    assert result is user
+    pass
 
 
+@pytest.mark.skip(reason=SKIP_REASON)
 @pytest.mark.anyio
 async def test_authenticate_user_wrong_password(auth_service: AuthService):
-    """Test authentication fails with wrong password."""
-    user_id = uuid4()
-    hashed = auth_service.get_password_hash("correct_password")
-    user = User(
-        id=user_id,
-        username="testuser",
-        password=hashed,  # pragma: allowlist secret
-        is_active=True,
-        is_superuser=False,
-    )
-    db = AsyncMock()
-
-    with patch("langflow.services.auth.service.get_user_by_username", new=AsyncMock(return_value=user)):
-        result = await auth_service.authenticate_user("testuser", "wrong_password", db)
-
-    assert result is None
+    pass
 
 
+@pytest.mark.skip(reason=SKIP_REASON)
 @pytest.mark.anyio
 async def test_authenticate_user_not_found(auth_service: AuthService):
-    """Test authentication returns None for non-existent user."""
-    db = AsyncMock()
-
-    with patch("langflow.services.auth.service.get_user_by_username", new=AsyncMock(return_value=None)):
-        result = await auth_service.authenticate_user("nonexistent", "password", db)
-
-    assert result is None
+    pass
 
 
+@pytest.mark.skip(reason=SKIP_REASON)
 @pytest.mark.anyio
 async def test_authenticate_user_inactive_never_logged_in(auth_service: AuthService):
-    """Test inactive user who never logged in gets 'waiting for approval'."""
-    user = User(
-        id=uuid4(),
-        username="testuser",
-        password=auth_service.get_password_hash("password"),  # pragma: allowlist secret
-        is_active=False,
-        is_superuser=False,
-        last_login_at=None,
-    )
-    db = AsyncMock()
-
-    with (
-        patch("langflow.services.auth.service.get_user_by_username", new=AsyncMock(return_value=user)),
-        pytest.raises(HTTPException) as exc,
-    ):
-        await auth_service.authenticate_user("testuser", "password", db)
-
-    assert exc.value.status_code == status.HTTP_400_BAD_REQUEST
-    assert "approval" in exc.value.detail.lower()
+    pass
 
 
+@pytest.mark.skip(reason=SKIP_REASON)
 @pytest.mark.anyio
 async def test_authenticate_user_inactive_previously_logged_in(auth_service: AuthService):
-    """Test inactive user who previously logged in gets 'inactive user'."""
-    user = User(
-        id=uuid4(),
-        username="testuser",
-        password=auth_service.get_password_hash("password"),  # pragma: allowlist secret
-        is_active=False,
-        is_superuser=False,
-        last_login_at=datetime.now(timezone.utc),
-    )
-    db = AsyncMock()
-
-    with (
-        patch("langflow.services.auth.service.get_user_by_username", new=AsyncMock(return_value=user)),
-        pytest.raises(HTTPException) as exc,
-    ):
-        await auth_service.authenticate_user("testuser", "password", db)
-
-    assert exc.value.status_code == status.HTTP_401_UNAUTHORIZED
-    assert "inactive" in exc.value.detail.lower()
+    pass
 
 
 # =============================================================================
-# MCP Authentication Tests
+# MCP Authentication Tests (still relevant)
 # =============================================================================
 
 
