@@ -187,6 +187,7 @@ class Flow(FlowBase, table=True):  # type: ignore[call-arg]
     id: UUID = Field(default_factory=uuid4, primary_key=True, unique=True)
     data: dict | None = Field(default=None, sa_column=Column(JSON))
     user_id: UUID | None = Field(index=True, foreign_key="user.id", nullable=True)
+    tenant_id: UUID | None = Field(default=None, index=True)
     user: "User" = Relationship(back_populates="flows")
     icon: str | None = Field(default=None, nullable=True)
     tags: list[str] | None = Field(sa_column=Column(JSON), default=[])
@@ -208,8 +209,8 @@ class Flow(FlowBase, table=True):  # type: ignore[call-arg]
         return Data(data=data)
 
     __table_args__ = (
-        UniqueConstraint("user_id", "name", name="unique_flow_name"),
-        UniqueConstraint("user_id", "endpoint_name", name="unique_flow_endpoint_name"),
+        UniqueConstraint("tenant_id", "user_id", "name", name="unique_flow_name"),
+        UniqueConstraint("tenant_id", "user_id", "endpoint_name", name="unique_flow_endpoint_name"),
     )
 
 

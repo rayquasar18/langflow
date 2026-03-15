@@ -29,6 +29,7 @@ class Folder(FolderBase, table=True):  # type: ignore[call-arg]
     )
     children: list["Folder"] = Relationship(back_populates="parent")
     user_id: UUID | None = Field(default=None, foreign_key="user.id")
+    tenant_id: UUID | None = Field(default=None, index=True)
     user: User = Relationship(back_populates="folders")
     flows: list[Flow] = Relationship(
         back_populates="folder", sa_relationship_kwargs={"cascade": "all, delete, delete-orphan"}
@@ -37,7 +38,7 @@ class Folder(FolderBase, table=True):  # type: ignore[call-arg]
         back_populates="folder", sa_relationship_kwargs={"cascade": "all, delete, delete-orphan"}
     )
 
-    __table_args__ = (UniqueConstraint("user_id", "name", name="unique_folder_name"),)
+    __table_args__ = (UniqueConstraint("tenant_id", "user_id", "name", name="unique_folder_name"),)
 
 
 class FolderCreate(FolderBase):
