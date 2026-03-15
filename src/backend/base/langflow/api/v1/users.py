@@ -1,49 +1,25 @@
+"""Users router -- user management endpoints.
+
+User registration (POST /users/) has been removed. Users are created via
+Auth Service and provisioned as shadow users on first JWT encounter.
+Password reset has also been removed as passwords are managed by Auth Service.
+"""
+
 from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func
-from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 from sqlmodel.sql.expression import SelectOfScalar
 
 from langflow.api.utils import CurrentActiveUser, DbSession
 from langflow.api.v1.schemas import UsersResponse
-from langflow.initial_setup.setup import get_or_create_default_folder
 from langflow.services.auth.utils import get_current_active_superuser
 from langflow.services.database.models.user.crud import get_user_by_id, update_user
-from langflow.services.database.models.user.model import User, UserCreate, UserRead, UserUpdate
-from langflow.services.deps import get_auth_service, get_settings_service
+from langflow.services.database.models.user.model import User, UserRead, UserUpdate
 
 router = APIRouter(tags=["Users"], prefix="/users")
-
-
-@router.post("/", response_model=UserRead, status_code=201)
-async def add_user(
-    user: UserCreate,
-    session: DbSession,
-) -> User:
-    """Add a new user to the database.
-
-    This endpoint allows public user registration (sign up).
-    User activation is controlled by the NEW_USER_IS_ACTIVE setting.
-    """
-    settings_service = get_settings_service()
-
-    new_user = User.model_validate(user, from_attributes=True)
-    try:
-        new_user.password = get_auth_service().get_password_hash(user.password)
-        new_user.is_active = settings_service.auth_settings.NEW_USER_IS_ACTIVE
-        session.add(new_user)
-        await session.flush()
-        await session.refresh(new_user)
-        folder = await get_or_create_default_folder(session, new_user.id)
-        if not folder:
-            raise HTTPException(status_code=500, detail="Error creating default project")
-    except IntegrityError as e:
-        raise HTTPException(status_code=400, detail="This username is unavailable.") from e
-
-    return new_user
 
 
 @router.get("/whoami", response_model=UserRead)
@@ -81,9 +57,10 @@ async def patch_user(
     user: CurrentActiveUser,
     session: DbSession,
 ) -> User:
-    """Update an existing user's data."""
-    update_password = bool(user_update.password)
+    """Update an existing user's data.
 
+    Note: Password changes are handled by Auth Service, not Langflow.
+    """
     # Prevent users from deactivating their own account to avoid lockout
     if user.id == user_id and user_update.is_active is False:
         raise HTTPException(status_code=403, detail="You can't deactivate your own user account")
@@ -93,46 +70,18 @@ async def patch_user(
 
     if not user.is_superuser and user.id != user_id:
         raise HTTPException(status_code=403, detail="Permission denied")
-    if update_password:
-        if not user.is_superuser:
-            raise HTTPException(status_code=400, detail="You can't change your password here")
-        user_update.password = get_auth_service().get_password_hash(user_update.password)
+
+    # Password changes are not supported -- Auth Service manages passwords
+    if user_update.password:
+        raise HTTPException(
+            status_code=400,
+            detail="Password changes are handled by Auth Service, not Langflow.",
+        )
 
     if user_db := await get_user_by_id(session, user_id):
-        if not update_password:
-            user_update.password = user_db.password
+        user_update.password = user_db.password
         return await update_user(user_db, user_update, session)
     raise HTTPException(status_code=404, detail="User not found")
-
-
-@router.patch("/{user_id}/reset-password", response_model=UserRead)
-async def reset_password(
-    user_id: UUID,
-    user_update: UserUpdate,
-    user: CurrentActiveUser,
-    session: DbSession,
-) -> User:
-    """Reset a user's password."""
-    if user_id != user.id:
-        raise HTTPException(status_code=404, detail="You can't change another user's password")
-
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    if user_update.password is None:
-        raise HTTPException(status_code=400, detail="Password is required for password reset")
-
-    auth = get_auth_service()
-    if auth.verify_password(user_update.password, user.password):
-        raise HTTPException(status_code=400, detail="You can't use your current password")
-
-    new_password = auth.get_password_hash(user_update.password)
-    user.password = new_password
-
-    await session.flush()
-    await session.refresh(user)
-
-    return user
 
 
 @router.delete("/{user_id}")

@@ -48,10 +48,8 @@ from langflow.services.database.models.folder.constants import (
 )
 from langflow.services.database.models.folder.model import Folder, FolderCreate, FolderRead
 from langflow.services.deps import (
-    get_auth_service,
     get_settings_service,
     get_storage_service,
-    get_variable_service,
     session_scope,
 )
 
@@ -1210,32 +1208,6 @@ async def create_or_update_starter_projects(all_types_dict: dict) -> None:
                         await logger.aexception(f"Error while creating starter project {project_name}")
                     successfully_created_projects += 1
                 await logger.adebug(f"Successfully created {successfully_created_projects} starter projects")
-
-
-async def initialize_auto_login_default_superuser() -> None:
-    settings_service = get_settings_service()
-    if not settings_service.auth_settings.AUTO_LOGIN:
-        return
-    # In AUTO_LOGIN mode, always use the default credentials for initial bootstrapping
-    # without persisting the password in memory after setup.
-    from lfx.services.settings.constants import DEFAULT_SUPERUSER, DEFAULT_SUPERUSER_PASSWORD
-
-    username = DEFAULT_SUPERUSER
-    password = DEFAULT_SUPERUSER_PASSWORD.get_secret_value()
-    if not username or not password:
-        msg = "SUPERUSER and SUPERUSER_PASSWORD must be set in the settings if AUTO_LOGIN is true."
-        raise ValueError(msg)
-
-    async with session_scope() as async_session:
-        super_user = await get_auth_service().create_super_user(username, password, db=async_session)
-        await get_variable_service().initialize_user_variables(super_user.id, async_session)
-        # Initialize agentic variables if agentic experience is enabled
-        from langflow.api.utils.mcp.agentic_mcp import initialize_agentic_user_variables
-
-        if get_settings_service().settings.agentic_experience:
-            await initialize_agentic_user_variables(super_user.id, async_session)
-        _ = await get_or_create_default_folder(async_session, super_user.id)
-    await logger.adebug("Super user initialized")
 
 
 async def get_or_create_default_folder(session: AsyncSession, user_id: UUID) -> FolderRead:

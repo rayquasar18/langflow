@@ -1,13 +1,18 @@
+"""Auth utility functions and FastAPI dependencies.
+
+All authentication delegates to the active auth service (QuasarAuthService).
+Legacy password/token helper functions have been removed.
+"""
+
 from __future__ import annotations
 
 import base64
-from typing import TYPE_CHECKING, Annotated, Final
+from typing import TYPE_CHECKING, Annotated
 
 from cryptography.fernet import Fernet
 from fastapi import Depends, HTTPException, Request, Security, WebSocket, WebSocketException, status
 from fastapi.security import APIKeyHeader, APIKeyQuery, OAuth2PasswordBearer
 from fastapi.security.utils import get_authorization_scheme_param
-from lfx.log.logger import logger
 from lfx.services.deps import injectable_session_scope
 
 from langflow.services.auth.exceptions import (
@@ -19,9 +24,6 @@ from langflow.services.auth.exceptions import (
 from langflow.services.deps import get_auth_service
 
 if TYPE_CHECKING:
-    from collections.abc import Coroutine
-    from datetime import timedelta
-
     from lfx.services.settings.service import SettingsService
     from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -71,64 +73,6 @@ def _auth_service():
     return get_auth_service()
 
 
-REFRESH_TOKEN_TYPE: Final[str] = "refresh"  # noqa: S105
-ACCESS_TOKEN_TYPE: Final[str] = "access"  # noqa: S105
-
-# JWT key configuration error messages
-PUBLIC_KEY_NOT_CONFIGURED_ERROR: Final[str] = (
-    "Server configuration error: Public key not configured for asymmetric JWT algorithm."
-)
-SECRET_KEY_NOT_CONFIGURED_ERROR: Final[str] = "Server configuration error: Secret key not configured."  # noqa: S105
-
-
-class JWTKeyError(HTTPException):
-    """Raised when JWT key configuration is invalid."""
-
-    def __init__(self, detail: str, *, include_www_authenticate: bool = True):
-        headers = {"WWW-Authenticate": "Bearer"} if include_www_authenticate else None
-        super().__init__(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=detail,
-            headers=headers,
-        )
-
-
-def get_jwt_verification_key(settings_service: SettingsService) -> str:
-    """Get the appropriate key for JWT verification based on configured algorithm.
-
-    For asymmetric algorithms (RS256, RS512): returns public key
-    For symmetric algorithms (HS256): returns secret key
-    """
-    algorithm = settings_service.auth_settings.ALGORITHM
-
-    if algorithm.is_asymmetric():
-        verification_key = settings_service.auth_settings.PUBLIC_KEY
-        if not verification_key:
-            logger.error("Public key is not set in settings for RS256/RS512.")
-            raise JWTKeyError(PUBLIC_KEY_NOT_CONFIGURED_ERROR)
-        return verification_key
-
-    secret_key = settings_service.auth_settings.SECRET_KEY.get_secret_value()
-    if secret_key is None:
-        logger.error("Secret key is not set in settings.")
-        raise JWTKeyError(SECRET_KEY_NOT_CONFIGURED_ERROR)
-    return secret_key
-
-
-def get_jwt_signing_key(settings_service: SettingsService) -> str:
-    """Get the appropriate key for JWT signing based on configured algorithm.
-
-    For asymmetric algorithms (RS256, RS512): returns private key
-    For symmetric algorithms (HS256): returns secret key
-    """
-    algorithm = settings_service.auth_settings.ALGORITHM
-
-    if algorithm.is_asymmetric():
-        return settings_service.auth_settings.PRIVATE_KEY.get_secret_value()
-
-    return settings_service.auth_settings.SECRET_KEY.get_secret_value()
-
-
 async def api_key_security(
     query_param: Annotated[str | None, Security(api_key_query)],
     header_param: Annotated[str | None, Security(api_key_header)],
@@ -166,7 +110,7 @@ async def get_current_user(
 
 
 async def get_current_user_from_access_token(
-    token: str | Coroutine | None,
+    token: str | None,
     db: AsyncSession,
 ) -> User:
     """Compatibility helper to resolve a user from an access token.
@@ -328,32 +272,6 @@ def decrypt_api_key(
     fernet_obj=None,  # noqa: ARG001
 ) -> str:
     return _auth_service().decrypt_api_key(encrypted_api_key)
-
-
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return _auth_service().verify_password(plain_password, hashed_password)
-
-
-def get_password_hash(password: str) -> str:
-    return _auth_service().get_password_hash(password)
-
-
-def create_token(data: dict, expires_delta: timedelta) -> str:
-    """Create a JWT token. Delegates to the active auth service."""
-    return _auth_service().create_token(data, expires_delta)
-
-
-async def create_refresh_token(refresh_token: str, db: AsyncSession) -> dict:
-    """Exchange a refresh token for new access/refresh tokens. Delegates to the active auth service."""
-    return await _auth_service().create_refresh_token(refresh_token, db)
-
-
-async def create_super_user(username: str, password: str, db: AsyncSession) -> User:
-    return await _auth_service().create_super_user(username, password, db)
-
-
-async def create_user_longterm_token(db: AsyncSession) -> tuple:
-    return await _auth_service().create_user_longterm_token(db)
 
 
 async def get_current_user_mcp(
