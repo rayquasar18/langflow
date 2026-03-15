@@ -197,7 +197,7 @@ async def build_graph_from_data(flow_id: uuid.UUID | str, payload: dict, **kwarg
     str_flow_id = str(flow_id)
     session_id = kwargs.get("session_id") or str_flow_id
 
-    graph = Graph.from_payload(payload, str_flow_id, flow_name, kwargs.get("user_id"))
+    graph = Graph.from_payload(payload, str_flow_id, flow_name, kwargs.get("user_id"), context=kwargs.get("context"))
     for vertex_id in graph.has_session_id_vertices:
         vertex = graph.get_vertex(vertex_id)
         if vertex is None:
@@ -218,6 +218,11 @@ async def build_graph_from_db_no_cache(flow_id: uuid.UUID, session: AsyncSession
         msg = "Invalid flow ID"
         raise ValueError(msg)
     kwargs["user_id"] = kwargs.get("user_id") or str(flow.user_id)
+    # Inject tenant_id into context for component access via self.graph.context
+    context = kwargs.get("context") or {}
+    if hasattr(flow, "tenant_id") and flow.tenant_id is not None:
+        context["tenant_id"] = str(flow.tenant_id).replace("-", "")
+    kwargs["context"] = context
     return await build_graph_from_data(flow_id, flow.data, flow_name=flow.name, **kwargs)
 
 
