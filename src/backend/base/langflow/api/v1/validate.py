@@ -4,13 +4,19 @@ from lfx.custom.validate import validate_code
 from lfx.log.logger import logger
 
 from langflow.api.v1.base import Code, CodeValidationResponse, PromptValidationResponse, ValidatePromptRequest
+from langflow.middleware.quota import require_feature
 from langflow.services.auth.utils import get_current_active_user
 
 # build router
 router = APIRouter(prefix="/validate", tags=["Validate"])
 
 
-@router.post("/code", status_code=200, dependencies=[Depends(get_current_active_user)], include_in_schema=False)
+@router.post(
+    "/code",
+    status_code=200,
+    dependencies=[Depends(get_current_active_user), Depends(require_feature("custom_components"))],
+    include_in_schema=False,
+)
 async def post_validate_code(code: Code) -> CodeValidationResponse:
     try:
         errors = validate_code(code.code)

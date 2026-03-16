@@ -44,6 +44,7 @@ from langflow.exceptions.api import APIException, InvalidChatInputError
 from langflow.exceptions.serialization import SerializationError
 from langflow.helpers.flow import get_flow_by_id_or_endpoint_name
 from langflow.interface.initialize.loading import update_params_with_load_from_db_fields
+from langflow.middleware.quota import filter_components_by_tier
 from langflow.processing.process import process_tweaks, run_graph_internal
 from langflow.schema.graph import Tweaks
 from langflow.services.auth.utils import (
@@ -95,15 +96,23 @@ async def parse_input_request_from_body(http_request: Request) -> SimplifiedAPIR
 
 
 @router.get("/all", dependencies=[Depends(get_current_active_user)])
-async def get_all():
+async def get_all(request: Request):
     """Retrieve all component types with compression for better performance.
 
     Returns a compressed response containing all available component types.
+    Components are filtered by the tenant's tier (e.g. free tier cannot see
+    advanced RAG components).
     """
     from langflow.interface.components import get_and_cache_all_types_dict
 
     try:
         all_types = await get_and_cache_all_types_dict(settings_service=get_settings_service())
+
+        # Filter components by tier if tenant context is available
+        tier = getattr(request.state, "tier", None)
+        if tier is not None:
+            all_types = filter_components_by_tier(all_types, tier)
+
         # Return compressed response using our utility function
         return compress_response(all_types)
 

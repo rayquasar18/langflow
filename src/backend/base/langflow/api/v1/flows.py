@@ -25,6 +25,7 @@ from langflow.api.utils import CurrentActiveUser, DbSession, cascade_delete_flow
 from langflow.api.v1.schemas import FlowListCreate
 from langflow.helpers.user import get_user_by_flow_id_or_endpoint_name
 from langflow.initial_setup.constants import STARTER_FOLDER_NAME
+from langflow.middleware.quota import check_rate_limit, require_quota
 from langflow.services.auth.utils import get_current_active_user
 from langflow.services.database.models.flow.model import (
     AccessTypeEnum,
@@ -297,7 +298,12 @@ async def _new_flow(
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
-@router.post("/", response_model=FlowRead, status_code=201)
+@router.post(
+    "/",
+    response_model=FlowRead,
+    status_code=201,
+    dependencies=[Depends(require_quota("max_flows")), Depends(check_rate_limit)],
+)
 async def create_flow(
     *,
     session: DbSession,
@@ -713,7 +719,12 @@ async def delete_flow(
     return {"message": "Flow deleted successfully"}
 
 
-@router.post("/batch/", response_model=list[FlowRead], status_code=201)
+@router.post(
+    "/batch/",
+    response_model=list[FlowRead],
+    status_code=201,
+    dependencies=[Depends(require_quota("max_flows")), Depends(check_rate_limit)],
+)
 async def create_flows(
     *,
     session: DbSession,
@@ -735,7 +746,12 @@ async def create_flows(
     return [FlowRead.model_validate(db_flow, from_attributes=True) for db_flow in db_flows]
 
 
-@router.post("/upload/", response_model=list[FlowRead], status_code=201)
+@router.post(
+    "/upload/",
+    response_model=list[FlowRead],
+    status_code=201,
+    dependencies=[Depends(require_quota("max_flows")), Depends(check_rate_limit)],
+)
 async def upload_file(
     *,
     session: DbSession,
