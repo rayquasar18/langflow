@@ -28,11 +28,12 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 # Tier definitions (local copy)
 # ---------------------------------------------------------------------------
-# Mirrored from auth/app/services/tier.py — keep in sync
+# Matches auth/app/services/tier.py schema — keep in sync
 #
-# Langflow cannot import from the auth service (separate Python package),
-# so it maintains its own copy of the tier config.
-# Quota values of -1 mean unlimited. Feature flags use sets for O(1) lookup.
+# Both services use identical nested structure:
+#   tier -> display_name, quotas (max_flows, max_kb_docs, max_requests_per_minute), features (set)
+# Langflow cannot import from auth (separate Python package), so this is
+# a maintained copy. When adding tiers or changing quotas, update BOTH files.
 
 TIER_DEFINITIONS: dict[str, dict] = {
     "free": {
