@@ -10,28 +10,17 @@ export default function getWidgetCode({
   flowId,
   flowName,
   isAuth,
-  copy = false,
 }: GetCodeType): string {
-  const source = copy
-    ? `<script
-  src="https://cdn.jsdelivr.net/gh/logspace-ai/langflow-embedded-chat@v1.0.7/dist/build/static/js/bundle.min.js">
-</script>`
-    : `<script
-  src="https://cdn.jsdelivr.net/gh/logspace-ai/langflow-embedded-chat@v1.0.7/dist/
-build/static/js/bundle.min.js">
-</script>`;
-
   const { protocol, host } = customGetHostProtocol();
+  const hostUrl = `${protocol}//${host}`;
+
+  const source = `<script src="${hostUrl}/widget.js"></script>`;
 
   return `${source}
-  <langflow-chat
-    window_title="${flowName}"
-    flow_id="${flowId}"
-    host_url="${protocol}//${host}"${
-      !isAuth
-        ? `
-    api_key="..."`
-        : ""
-    }>
-</langflow-chat>`;
+<quasar-chat
+  data-flow-id="${flowId}"
+  data-host-url="${hostUrl}"${
+    !isAuth ? `\n  data-api-key="..."` : ""
+  }${flowName ? `\n  data-flow-name="${flowName}"` : ""}>
+</quasar-chat>`;
 }

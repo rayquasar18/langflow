@@ -546,6 +546,14 @@ def create_app():
 
     add_pagination(app)
 
+    # Serve chat widget JS from the frontend directory or the widget build output
+    widget_path = Path(__file__).parent / "frontend" / "widget.js"
+    if widget_path.exists():
+
+        @app.get("/widget.js")
+        async def serve_widget():
+            return FileResponse(widget_path, media_type="application/javascript")
+
     return app
 
 
