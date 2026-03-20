@@ -26,6 +26,8 @@ from langflow.api.v1 import (
     validate_router,
     variables_router,
 )
+from langflow.api.v1.admin_proxy import router as admin_proxy_router
+from langflow.api.v1.internal_stats import router as internal_stats_router
 from langflow.api.v1.voice_mode import router as voice_mode_router
 from langflow.api.v2 import files_router as files_router_v2
 from langflow.api.v2 import mcp_router as mcp_router_v2
@@ -64,6 +66,8 @@ router_v1.include_router(openai_responses_router)
 router_v1.include_router(models_router)
 router_v1.include_router(model_options_router)
 router_v1.include_router(deployment_router)
+router_v1.include_router(internal_stats_router)
+router_v1.include_router(admin_proxy_router)
 
 
 # Agentic flow execution - lazy import to avoid circular dependency
