@@ -41,6 +41,16 @@ import ShortcutsPage from "./pages/SettingsPage/pages/ShortcutsPage";
 import ViewPage from "./pages/ViewPage";
 
 const AdminPage = lazy(() => import("./pages/AdminPage"));
+const UsersPage = lazy(() => import("./pages/AdminPage/pages/users-page"));
+const TenantListPage = lazy(
+  () => import("./pages/AdminPage/pages/tenant-list-page"),
+);
+const TenantDetailPage = lazy(
+  () => import("./pages/AdminPage/pages/tenant-detail-page"),
+);
+const SystemHealthPage = lazy(
+  () => import("./pages/AdminPage/pages/system-health-page"),
+);
 const LoginAdminPage = lazy(() => import("./pages/AdminPage/LoginPage"));
 const DeleteAccountPage = lazy(() => import("./pages/DeleteAccountPage"));
 
@@ -177,7 +187,19 @@ const router = createBrowserRouter(
                       <AdminPage />
                     </ProtectedAdminRoute>
                   }
-                />
+                >
+                  <Route
+                    index
+                    element={<CustomNavigate replace to="users" />}
+                  />
+                  <Route path="users" element={<UsersPage />} />
+                  <Route path="tenants" element={<TenantListPage />} />
+                  <Route
+                    path="tenants/:tenantId"
+                    element={<TenantDetailPage />}
+                  />
+                  <Route path="health" element={<SystemHealthPage />} />
+                </Route>
               </Route>
               <Route path="flow/:id/">
                 <Route path="" element={<CustomDashboardWrapperPage />}>
