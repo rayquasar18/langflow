@@ -12,7 +12,7 @@ from langflow.services.auth import utils as auth_utils
 from langflow.services.base import Service
 from langflow.services.database.models.variable.model import Variable, VariableCreate, VariableRead, VariableUpdate
 from langflow.services.variable.base import VariableService
-from langflow.services.variable.constants import CREDENTIAL_TYPE, GENERIC_TYPE
+from langflow.services.variable.constants import CREDENTIAL_TYPE, GENERIC_TYPE, VARIABLE_TO_PROVIDER
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -198,23 +198,45 @@ class DatabaseVariableService(VariableService, Service):
         name: str,
         field: str,
         session: AsyncSession,
+        *,
+        tenant_id: str | None = None,
     ) -> str:
-        # we get the credential from the database
-        # credential = session.query(Variable).filter(Variable.user_id == user_id, Variable.name == name).first()
-        variable = await self.get_variable_object(user_id, name, session)
+        # 1. Try personal key first (existing behavior)
+        personal_key: str | None = None
+        try:
+            variable = await self.get_variable_object(user_id, name, session)
 
-        if variable.type == CREDENTIAL_TYPE and field == "session_id":
-            msg = (
-                f"variable {name} of type 'Credential' cannot be used in a Session ID field "
-                "because its purpose is to prevent the exposure of values."
-            )
-            raise TypeError(msg)
+            if variable.type == CREDENTIAL_TYPE and field == "session_id":
+                msg = (
+                    f"variable {name} of type 'Credential' cannot be used in a Session ID field "
+                    "because its purpose is to prevent the exposure of values."
+                )
+                raise TypeError(msg)
 
-        # Only decrypt CREDENTIAL type variables; GENERIC variables are stored as plain text
-        if variable.type == CREDENTIAL_TYPE:
-            return auth_utils.decrypt_api_key(variable.value)
-        # GENERIC type - return as-is
-        return variable.value
+            # Only decrypt CREDENTIAL type variables; GENERIC variables are stored as plain text
+            if variable.type == CREDENTIAL_TYPE:
+                personal_key = auth_utils.decrypt_api_key(variable.value)
+            else:
+                # GENERIC type - return as-is
+                personal_key = variable.value
+        except ValueError:
+            pass  # No personal key found -- try fallback
+
+        if personal_key is not None:
+            return personal_key
+
+        # 2. Fallback to tenant/platform key via Auth Service
+        if tenant_id and name in VARIABLE_TO_PROVIDER:
+            from langflow.services.variable.llm_key_client import resolve_llm_key
+
+            provider = VARIABLE_TO_PROVIDER[name]
+            resolved = await resolve_llm_key(provider=provider, tenant_id=tenant_id)
+            if resolved:
+                return resolved
+
+        # 3. No key found at any level
+        msg = f"{name} variable not found."
+        raise ValueError(msg)
 
     async def get_all(self, user_id: UUID | str, session: AsyncSession) -> list[VariableRead]:
         stmt = select(Variable).where(Variable.user_id == user_id)

@@ -13,6 +13,7 @@ from pydantic import PydanticDeprecatedSince20
 from langflow.schema.artifact import get_artifact_type, post_process_raw
 from langflow.schema.data import Data
 from langflow.services.deps import get_tracing_service, session_scope
+from langflow.services.variable.constants import VARIABLE_TO_PROVIDER
 
 if TYPE_CHECKING:
     from lfx.custom.custom_component.component import Component
@@ -115,6 +116,11 @@ async def update_params_with_load_from_db_fields(
     *,
     fallback_to_env_vars=False,
 ):
+    # Extract tenant_id from graph context for LLM key fallback
+    tenant_id = None
+    if hasattr(custom_component, "graph") and custom_component.graph and hasattr(custom_component.graph, "context"):
+        tenant_id = custom_component.graph.context.get("tenant_id")
+
     async with session_scope() as session:
         for field in load_from_db_fields:
             if field not in params or not params[field]:
@@ -125,10 +131,17 @@ async def update_params_with_load_from_db_fields(
             except ValueError as e:
                 if "User id is not set" in str(e):
                     raise
-                if "variable not found." in str(e) and not fallback_to_env_vars:
+                # Try tenant/platform fallback for known LLM provider variables
+                if tenant_id and params.get(field) and params[field] in VARIABLE_TO_PROVIDER:
+                    from langflow.services.variable.llm_key_client import resolve_llm_key
+
+                    provider = VARIABLE_TO_PROVIDER[params[field]]
+                    key = await resolve_llm_key(provider=provider, tenant_id=tenant_id)
+                elif "variable not found." in str(e) and not fallback_to_env_vars:
                     raise
-                await logger.adebug(str(e))
-                key = None
+                else:
+                    await logger.adebug(str(e))
+                    key = None
 
             if fallback_to_env_vars and key is None:
                 key = os.getenv(params[field])
